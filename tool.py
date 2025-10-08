@@ -1,12 +1,15 @@
 import smtplib
-import os
+import imaplib
+import email
 from langchain_core.tools import tool
 
-
+# ---------------- Email Configuration ---------------- #
 SENDER_EMAIL = "akshaykalangi9@gmail.com"
 APP_PASSWORD = "nvozzcjnlsliygxi"  
-imap_server = "imap.gmail.com"
+IMAP_SERVER = "imap.gmail.com"
 
+
+# ---------------- Email Sending Tool ---------------- #
 @tool
 def send_email(receiver_email: str, message: str = "Hello!"):
     """Send an email using Gmail SMTP."""
@@ -19,12 +22,10 @@ def send_email(receiver_email: str, message: str = "Hello!"):
     except Exception as e:
         print("Error:", e)
 
-import imaplib
-import email
-from langchain_core.tools import tool
 
+# ---------------- Email Receiving Tool ---------------- #
 @tool
-def received_emails(type: str = "UNSEEN"):
+def received_emails(email_type: str = "UNSEEN"):
     """Fetch received emails and return their subject, sender, and body."""
 
     def extract_email_body(message):
@@ -48,11 +49,11 @@ def received_emails(type: str = "UNSEEN"):
     emails_list = []
 
     try:
-        conn = imaplib.IMAP4_SSL(imap_server)
+        conn = imaplib.IMAP4_SSL(IMAP_SERVER)
         conn.login(SENDER_EMAIL, APP_PASSWORD)
         conn.select("INBOX")
 
-        status, data = conn.search(None, type)
+        status, data = conn.search(None, email_type)
         mail_ids = data[0].split()
 
         if not mail_ids:
@@ -65,7 +66,7 @@ def received_emails(type: str = "UNSEEN"):
                 subject = message["subject"]
                 sender = message["from"]
                 body = extract_email_body(message)
-                print(body)
+
                 emails_list.append({
                     "subject": subject,
                     "from": sender,
@@ -78,6 +79,3 @@ def received_emails(type: str = "UNSEEN"):
         print("Error:", e)
 
     return emails_list
-
-if __name__ == "__main__":
-    print(received_emails.invoke("SINCE 07-Oct-2025"))
