@@ -1,11 +1,12 @@
+from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel, Field
 from langgraph.graph import StateGraph, START, END
 from typing import Optional
-
+from tool import send_email,received_emails
 load_dotenv()
-
+tools=[send_email,received_emails]
 llm_model = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
 
 
@@ -67,31 +68,68 @@ def check_email(state: dict):
     else:
         return "end"
 
+class EmailContent(BaseModel):
+    content: str = Field(description="Generated email content")
+
 
 def generate(state: dict):
     print("\n=== Generating Email ===")
     cls = state.get("classification")
     
-    if not cls.to:
-        print("Error: Missing recipient email address")
-        return {"error": "Missing recipient email address"}
+    # Extract recipient name from email
+    recipient_name = cls.to.split("@")[0] if cls.to and "@" in cls.to else "there"
+    
+    # Check if content needs to be generated or is already provided
+    if cls.content and len(cls.content.strip()) > 0:
+        # Content already provided by user
+        email_content = cls.content
+        print(f"Using provided content: {email_content}")
+    else:
+        # Generate content using LLM
+        prompt = f"""
+        You are an email content generation assistant.
+        Generate a professional and friendly email content based on the following:
+        
+        Recipient: {recipient_name}
+        Subject: {cls.subject}
+        
+        Guidelines:
+        - Keep it concise and professional
+        - Match the tone to the subject matter
+        - Include a proper greeting and closing
+        - Make it natural and personalized
+        
+        Generate only the email body content, nothing else.
+        """
+        
+        structured_llm = llm_model.with_structured_output(EmailContent)
+        result = structured_llm.invoke(prompt)
+        email_content = result.content
+        print(f"Generated content: {email_content}")
     
     print(f"To: {cls.to}")
     print(f"Subject: {cls.subject}")
-    print(f"Content: {cls.content}")
+    print(f"Message: {email_content}")
+    
+
+    return {
+        "result": "Email prepared successfully",
+        "email_details": {
+            "to": cls.to,
+            "subject": cls.subject,
+            "message": email_content
+        }
+    }
+    # print(f"To: {cls.to}")
+    # print(f"Subject: {cls.subject}")
+    # print(f"Content: {cls.content}")
+
+
     
     # Uncomment to actually send:
     # from tool import send_email
     # result = send_email(to=cls.to, subject=cls.subject, body=cls.content)
-    
-    return {
-        "result": "Email sent successfully",
-        "email_details": {
-            "to": cls.to,
-            "subject": cls.subject,
-            "content": cls.content
-        }
-    }
+
 
 
 def fetch(state: dict):
@@ -114,6 +152,51 @@ def fetch(state: dict):
 def handle_not_email(state: dict):
     return {"result": "Request is not email-related"}
 
+def tool_calling(state):
+    print("tool calling....")
+    print(state)
+    
+    # Extract email details from state
+    email_details = state.get("email_details", {})
+    to = email_details.get("to")
+    subject = email_details.get("subject")
+    message = email_details.get("message")
+    
+    # Create a prompt for the LLM to use the tools
+    prompt = f"""
+    Send an email with the following details:
+    - To: {to}
+    - Subject: {subject}
+    - Message: {message}
+    
+    Use the send_email tool to send this email.
+    """
+    
+    llm_tools = llm_model.bind_tools(tools=tools)
+    res = llm_tools.invoke(prompt)
+    print(res)
+    
+    # Check if the LLM wants to call a tool
+    if res.tool_calls:
+        print(f"Tool calls detected: {res.tool_calls}")
+        
+        # Execute the tool calls
+        from langgraph.prebuilt import ToolNode
+        tool_node = ToolNode(tools=tools)
+        tool_results = tool_node.invoke({"messages": [res]})
+        
+        return {
+            "result": "Email sent via tool",
+            "tool_results": tool_results
+        }
+    else:
+        print("No tool calls made")
+        return {
+            "result": "No tool execution needed",
+            "response": res.content
+        }
+
+
 
 # Build the graph
 email_state_graph = StateGraph(dict)
@@ -122,7 +205,7 @@ email_state_graph.add_node("classify_email_request", classify_email_request)
 email_state_graph.add_node("generate", generate)
 email_state_graph.add_node("fetch", fetch)
 email_state_graph.add_node("handle_not_email", handle_not_email)
-
+email_state_graph.add_node("tool_calling",tool_calling)
 email_state_graph.add_edge(START, "classify_email_request")
 
 email_state_graph.add_conditional_edges(
@@ -135,7 +218,8 @@ email_state_graph.add_conditional_edges(
     }
 )
 
-email_state_graph.add_edge("generate", END)
+email_state_graph.add_edge("generate", 'tool_calling')
+email_state_graph.add_edge("tool_calling",END)
 email_state_graph.add_edge("fetch", END)
 email_state_graph.add_edge("handle_not_email", END)
 
@@ -151,11 +235,11 @@ res = chat_graph.invoke({
 print("\n=== Final Result ===")
 print(res)
 
-print("\n" + "=" * 60)
-print("TEST 2: Check Emails")
-print("=" * 60)
-res2 = chat_graph.invoke({
-    "user_request": "show me my unread emails"
-})
-print("\n=== Final Result ===")
-print(res2)
+# print("\n" + "=" * 60)
+# print("TEST 2: Check Emails")
+# print("=" * 60)
+# res2 = chat_graph.invoke({
+#     "user_request": "show me my unread emails"
+# })
+# print("\n=== Final Result ===")
+# print(res2)
