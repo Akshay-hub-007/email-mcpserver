@@ -151,18 +151,19 @@ def fetch(state: dict):
 
 def handle_not_email(state: dict):
     return {"result": "Request is not email-related"}
-
 def tool_calling(state):
-    print("tool calling....")
-    print(state)
+    print("\n=== Tool Calling ===")
     
-    # Extract email details from state
     email_details = state.get("email_details", {})
     to = email_details.get("to")
     subject = email_details.get("subject")
     message = email_details.get("message")
     
-    # Create a prompt for the LLM to use the tools
+    print(f"Preparing to send email:")
+    print(f"  To: {to}")
+    print(f"  Subject: {subject}")
+    print(f"  Message: {message}")
+    
     prompt = f"""
     Send an email with the following details:
     - To: {to}
@@ -174,30 +175,48 @@ def tool_calling(state):
     
     llm_tools = llm_model.bind_tools(tools=tools)
     res = llm_tools.invoke(prompt)
-    print(res)
     
-    # Check if the LLM wants to call a tool
+    print(f"\nTool calls detected: {res.tool_calls}")
+    
     if res.tool_calls:
-        print(f"Tool calls detected: {res.tool_calls}")
-        
-        # Execute the tool calls
-        from langgraph.prebuilt import ToolNode
-        tool_node = ToolNode(tools=tools)
-        tool_results = tool_node.invoke({"messages": [res]})
-        
-        return {
-            "result": "Email sent via tool",
-            "tool_results": tool_results
-        }
+        for tool_call in res.tool_calls:
+            tool_name = tool_call["name"]
+            tool_args = tool_call["args"]
+            
+            print(f"\nExecuting tool: {tool_name}")
+            print(f"Arguments: {tool_args}")
+            
+            # Find and execute the matching tool
+            tool_executed = False
+            for tool in tools:
+                if tool.name == tool_name:
+                    try:
+                        result = tool.invoke(tool_args)
+                        print(f"Tool execution result: {result}")
+                        return {
+                            "result": "Email sent successfully",
+                            "tool_result": result,
+                            "email_details": email_details
+                        }
+                    except Exception as e:
+                        print(f"Error executing tool: {e}")
+                        return {
+                            "result": f"Error sending email: {str(e)}",
+                            "error": str(e)
+                        }
+            
+            if not tool_executed:
+                print(f"Warning: Tool '{tool_name}' not found in available tools")
+                return {
+                    "result": f"Tool '{tool_name}' not found",
+                    "error": "Tool not available"
+                }
     else:
-        print("No tool calls made")
+        print("No tool calls made by the model")
         return {
             "result": "No tool execution needed",
             "response": res.content
         }
-
-
-
 # Build the graph
 email_state_graph = StateGraph(dict)
 

@@ -2,28 +2,26 @@ import smtplib
 import imaplib
 import email
 from langchain_core.tools import tool
+from email.message import EmailMessage
 
 # ---------------- Email Configuration ---------------- #
-SENDER_EMAIL = "akshaykalangi9@gmail.com"
-APP_PASSWORD = "nvozzcjnlsliygxi"  
+SENDER_EMAIL = "akshaykalangi54@gmail.com"
+APP_PASSWORD = "fljg lwry rstg pvgr"  
 IMAP_SERVER = "imap.gmail.com"
 
 
-# ---------------- Email Sending Tool ---------------- #
-@tool
-def send_email(receiver_email: str, message: str = "Hello!"):
-    """Send an email using Gmail SMTP."""
+
+@tool()
+def send_email(receiver_email, subject, message="Hello!"):
+    '''sending email tool'''
     try:
-        with smtplib.SMTP("smtp.gmail.com", 587) as s:
-            s.starttls()
+        with smtplib.SMTP_SSL('smtp.gmail.com', 587) as s:
             s.login(SENDER_EMAIL, APP_PASSWORD)
-            s.sendmail(SENDER_EMAIL, receiver_email, message)
-            print(f"Email sent successfully to {receiver_email}")
+            full_message = f"Subject: {subject}\n\n{message}"
+            s.sendmail('akshaykalangi9@gmail.com', receiver_email, full_message)
+        print("✅ Email sent successfully!")
     except Exception as e:
-        print("Error:", e)
-
-
-# ---------------- Email Receiving Tool ---------------- #
+        print("❌ Error:", e)
 @tool
 def received_emails(email_type: str = "UNSEEN"):
     """Fetch received emails and return their subject, sender, and body."""
@@ -79,3 +77,6 @@ def received_emails(email_type: str = "UNSEEN"):
         print("Error:", e)
 
     return emails_list
+
+if __name__=="__main__":
+    send_email.invoke({"receiver_email": "akshaykalangi54@gmail.com", "subject": "hello", "message": "happy birthday"})
